@@ -13,7 +13,8 @@ do -- scope
 
     function proto.dissector(buffer, pinfo, tree)
         pinfo.cols.protocol = 'Redis'
-
+        local info = ''
+        
         mtypes = {
             ['+'] = 'Status',
             ['-'] = 'Error',
@@ -57,6 +58,7 @@ do -- scope
                 offset = offset + length + CRLF
 
                 -- recurse down for each message contained in this multi-bulk message
+                info = info .. '{'
                 for ii = 1, replies do
                     offset = recurse(child, buffer, offset)
                     if offset == -1 then
@@ -65,6 +67,7 @@ do -- scope
                     end
                 end
                 child:set_len(offset - old_offset)
+                info = info .. '}'
 
             elseif prefix == '$' then -- bulk, contains one binary string
                 local bytes = tonumber(text)
@@ -91,6 +94,8 @@ do -- scope
 
                     -- get the string contained within this bulk message
                     child:add(f.value, buffer(offset, bytes))
+                    local value = buffer(offset, bytes):string()
+                    info = info .. value .. ", "
                     offset = offset + bytes + CRLF
 
                 end
@@ -98,6 +103,8 @@ do -- scope
                 local child = parent:add(proto, buffer(offset, length + CRLF),
                                          'Redis '..mtype..' Reply')
                 child:add(f.value, buffer(offset + prefix:len(), length - prefix:len()))
+                local value = buffer(offset + prefix:len(), length - prefix:len()):string()
+                info = info .. value .. ", "
                 offset = offset + length + CRLF
             end
 
@@ -116,6 +123,9 @@ do -- scope
 
         -- check that we consumed exactly the right number of bytes
 --        assert(offset == buffer():len(), 'consumed '..offset..' bytes of '..buffer():len())
+
+        -- set info column
+        pinfo.cols.info:set(info)
     end
 
     -- register this dissector for the standard Redis ports
